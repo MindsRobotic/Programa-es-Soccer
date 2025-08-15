@@ -1,94 +1,67 @@
-// Pinos dos motores
-const int M1_IN1 = 7; // Esquerda
-const int M1_IN2 = 6;
-const int M2_IN1 = 5; // Trás
-const int M2_IN2 = 4;
-const int M3_IN1 = 3; // Direita
-const int M3_IN2 = 2;
+// HC-SR04 - Arduino Mega
+const uint8_t TRIG_PIN = 7;   // TRIG -> D7 (pino de saída)
+const uint8_t ECHO_PIN = 6;   // ECHO -> D6 (pino de entrada)
+const unsigned long PULSE_TIMEOUT = 30000UL; // 30 ms
 
-// ... (Aqui vai o código do sensor ultrassônico que já passamos)
-
-// Setup motor
 void setup() {
-  Serial.begin(9600);
-  // Sensores setup (como antes)
-  for (int i = 0; i < 3; i++) {
-    pinMode(sensores[i].trigPin, OUTPUT);
-    pinMode(sensores[i].echoPin, INPUT);
-    sensores[i].tempoAnterior = millis();
-    sensores[i].distanciaAnterior = distanciaFiltrada(sensores[i].trigPin, sensores[i].echoPin);
+  Serial.begin(9600);       // mantém 9600 se você preferir
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  digitalWrite(TRIG_PIN, LOW);
+  delay(100);
+  Serial.println("HC-SR04 inicializado (Mega)");
+}
+
+void loop() {
+  // Gera pulso TRIG (>=10 us)
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  // Lê duração do pulso HIGH no ECHO (microsegundos)
+  unsigned long duracao = pulseIn(ECHO_PIN, HIGH, PULSE_TIMEOUT);
+
+  if (duracao == 0) {
+    // fallback manual para diagnóstico
+    Serial.println("Sem leitura com pulseIn (duracao=0). Tentando fallback manual...");
+    duracao = measurePulseManual(ECHO_PIN, PULSE_TIMEOUT);
+    if (duracao == 0) {
+      Serial.println("Fallback manual também retornou 0 -> sem leitura");
+      Serial.print("Estado atual do ECHO (digitalRead): ");
+      Serial.println(digitalRead(ECHO_PIN));
+    } else {
+      printDistance(duracao);
+    }
+  } else {
+    printDistance(duracao);
   }
-  
-  // Motores como saída
-  pinMode(M1_IN1, OUTPUT);
-  pinMode(M1_IN2, OUTPUT);
-  pinMode(M2_IN1, OUTPUT);
-  pinMode(M2_IN2, OUTPUT);
-  pinMode(M3_IN1, OUTPUT);
-  pinMode(M3_IN2, OUTPUT);
 
-  // Parar motores inicialmente
-  pararMotores();
+  delay(200); // intervalo entre leituras
 }
 
-// Funções para controlar motores
-
-void pararMotores() {
-  digitalWrite(M1_IN1, LOW);
-  digitalWrite(M1_IN2, LOW);
-  digitalWrite(M2_IN1, LOW);
-  digitalWrite(M2_IN2, LOW);
-  digitalWrite(M3_IN1, LOW);
-  digitalWrite(M3_IN2, LOW);
+unsigned long measurePulseManual(uint8_t pin, unsigned long timeoutMicros) {
+  unsigned long start = micros();
+  // espera subida
+  while (digitalRead(pin) == LOW) {
+    if (micros() - start > timeoutMicros) return 0;
+  }
+  unsigned long tRise = micros();
+  // espera descida
+  while (digitalRead(pin) == HIGH) {
+    if (micros() - tRise > timeoutMicros) return 0;
+  }
+  unsigned long tFall = micros();
+  return tFall - tRise;
 }
 
-void seguirEmFrente() {
-  // Motor 1 (esquerda) pra frente
-  digitalWrite(M1_IN1, HIGH);
-  digitalWrite(M1_IN2, LOW);
-
-  // Motor 2 (trás) pra frente
-  digitalWrite(M2_IN1, HIGH);
-  digitalWrite(M2_IN2, LOW);
-
-  // Motor 3 (direita) pra frente
-  digitalWrite(M3_IN1, HIGH);
-  digitalWrite(M3_IN2, LOW);
-
-  Serial.println("Seguindo em frente");
+void printDistance(unsigned long duracao) {
+  float distancia = (duracao * 0.0343) / 2.0; // cm
+  Serial.print("Duracao (us): ");
+  Serial.print(duracao);
+  Serial.print("  -> Distancia: ");
+  Serial.print(distancia, 2);
+  Serial.println(" cm");
 }
 
-void desviarParaDireita() {
-  // Motor esquerda para frente
-  digitalWrite(M1_IN1, HIGH);
-  digitalWrite(M1_IN2, LOW);
-
-  // Motor trás para trás (gira o robô)
-  digitalWrite(M2_IN1, LOW);
-  digitalWrite(M2_IN2, HIGH);
-
-  // Motor direita para trás
-  digitalWrite(M3_IN1, LOW);
-  digitalWrite(M3_IN2, HIGH);
-
-  Serial.println("Desviando para direita");
-}
-
-void desviarParaEsquerda() {
-  // Motor esquerda para trás
-  digitalWrite(M1_IN1, LOW);
-  digitalWrite(M1_IN2, HIGH);
-
-  // Motor trás para trás (gira o robô)
-  digitalWrite(M2_IN1, LOW);
-  digitalWrite(M2_IN2, HIGH);
-
-  // Motor direita para frente
-  digitalWrite(M3_IN1, HIGH);
-  digitalWrite(M3_IN2, LOW);
-
-  Serial.println("Desviando para esquerda");
-}
-
-// No loop principal, você escolhe qual desvio usar, por exemplo:
-// if (desviar) desviarParaDireita(); else seguirEmFrente();
