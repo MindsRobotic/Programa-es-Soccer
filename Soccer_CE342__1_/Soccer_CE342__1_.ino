@@ -22,14 +22,14 @@
 #define SOL_IN4 12
 
 // --- Variáveis do IR ---
-int ballDirecao;
+int ballDirection;
 int ballIntens;
 
 // --- Velocidade base ---
 int velocidade = 255;
 
 // --- PID ---
-float kp = 20;
+float kp = 1;
 float ki = 0;
 float kd = 0;
 float erroAnterior = 0;
@@ -86,37 +86,38 @@ void PID(int erro, int velocidade) {
   int velEsq, velDir, velTras = 0;
   if (erro == 0){
     velEsq = constrain(velocidade - correcao, 0, 255);
-    velDir = constrain(velocidade + correcao, 0, 255);
-    velTras = constrain(correcao, 0, 255);
-  }
-
-  if (erro < 0){
-    velEsq = constrain(velocidade - correcao, 0, 255);
     velDir = constrain(velocidade + correcao, 0, 255) * -1;
     velTras = constrain(correcao, 0, 255);
   }
 
-  if (erro > 0){
+  if (erro < 0){
     velEsq = constrain(velocidade - correcao, 0, 255) * -1;
+    velDir = constrain(velocidade + correcao, 0, 255) * -1;
+    velTras = constrain(correcao, 0, 255) * -1;
+  }
+
+  if (erro > 0){
+    velEsq = constrain(velocidade - correcao, 0, 255);
     velDir = constrain(velocidade + correcao, 0, 255);
     velTras = constrain(correcao, 0, 255);
   }
 
  Deslocar(velEsq, velDir, velTras);
+
 }
 
 void Deslocar(int motoresquerdo, int motordireito, int motortras){
 
   if (motoresquerdo >= 0){
     // Motor 1 (Esquerda)
-    digitalWrite(M1_IN1, LOW); digitalWrite(M1_IN2, HIGH);
+    digitalWrite(M1_IN1, HIGH); digitalWrite(M1_IN2, LOW);
     analogWrite(M1_ENA, motoresquerdo);
   }
 
   if (motoresquerdo < 0){
     // Motor 1 (Esquerda)
     motoresquerdo = motoresquerdo * -1;
-    digitalWrite(M1_IN1, HIGH); digitalWrite(M1_IN2, LOW);
+    digitalWrite(M1_IN1, LOW); digitalWrite(M1_IN2, HIGH);
     analogWrite(M1_ENA, motoresquerdo);
   }
 
@@ -145,37 +146,25 @@ void Deslocar(int motoresquerdo, int motordireito, int motortras){
       digitalWrite(M3_IN1, LOW); digitalWrite(M3_IN2, HIGH);
       analogWrite(M3_ENA, motortras);
   }
+
+
+
 }
 
 // ------------------- Loop principal -------------------
 void loop() {
-
   // --- Lê bola ---
   InfraredResult InfraredBall = InfraredSeeker::ReadAC(); // Realiza a leitura do sensor IR Seeker
-  ballDirecao = InfraredBall.Direction; // Armazena a direção na variável
+  ballDirection = InfraredBall.Direction; // Armazena a direção na variável
   ballIntens = InfraredBall.Strength; // Armazena a direção na variável
 
   // --- Mostra valores ---
-  Serial.print("Direção: "); Serial.print(ballDirecao);
+  Serial.print("Direção: "); Serial.print(ballDirection);
   Serial.print(" | Intensidade: "); Serial.println(ballIntens);
 
-  // --- Verifica se a bola está visível ---
-  /*if (direcao == 0 || intensidade < 5) {
-    parar();
-    integral = 0;
-    erroAnterior = 0;
-    return;
-  }*/
-
-  // Ajusta velocidade de acordo com intensidade
-  if (ballIntens >= 200) {
-    velocidade = 120;
-  } else {
-    velocidade = 255;
-  }
-
   // --- Controle de movimento com PID ---
-  int erro = 5 - ballDirecao; // Centro é 5
-  //PID(erro, velocidade);
+  int erro = 5 - ballDirection; // Centro é 5
+  PID(erro, velocidade);
 
+millis();
 }
