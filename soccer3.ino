@@ -93,7 +93,7 @@ void PID(int erro, int velocidade) {
 
   if (erro < 0){
     velEsq = constrain(velocidade - correcao, 0, 255) * -1;
-    velDir = constrain(velocidade + correcao, 0, 255);
+    velDir = constrain(velocidade + correcao, 0, 255) * -;
     velTras = constrain(correcao, 0, 255);
   }
 
@@ -152,42 +152,15 @@ void Deslocar(int motoresquerdo, int motordireito, int motortras){
 void loop() {
   // --- Lê bola ---
   InfraredResult bola = InfraredSeeker::ReadAC();
-  int leituraCorrigida = 10 - bola.Direction; 
-  direcao = mediaDirecao(leituraCorrigida);  // Suaviza leitura
+  int leituraCorrigida = 5 - ball.Direction; 
+  direcao = ball.Direction;  // Suaviza leitura
   intensidade = bola.Strength;
 
   // --- Mostra valores ---
   Serial.print("Direção: "); Serial.print(direcao);
   Serial.print(" | Intensidade: "); Serial.println(intensidade);
 
-  // --- Verifica se a bola está visível ---
-  /*if (direcao == 0 || intensidade < 5) {
-    parar();
-    integral = 0;
-    erroAnterior = 0;
-    return;
-  }*/
 
-  // Ajusta velocidade de acordo com intensidade
-  if (intensidade >= 200) {
-    velocidadeFrente = 120;
-    velocidadeGiro = 100;
-  } else {
-    velocidadeFrente = 255;
-    velocidadeGiro = 200;
-  }
-
-  // --- Controle de movimento com PID ---
-  //if (direcao >= 4 && direcao <= 6) {
     int erro = 5 - direcao; // Centro é 5
     PID(erro, velocidadeFrente);
-  /*/} else if (direcao > 5) {
-    girarEsquerda(velocidadeGiro);
-    integral = 0; erroAnterior = 0;
-  } else if (direcao < 5) {
-    girarDireita(velocidadeGiro);
-    integral = 0; erroAnterior = 0;
-  }
-*/
-  //millis(50);
-}
+
