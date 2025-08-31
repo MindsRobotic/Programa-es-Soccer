@@ -1,5 +1,7 @@
 #include <Wire.h>
 #include <HTInfraredSeeker.h>
+#include <Adafruit_BNO055.h>
+#include <Adafruit_Sensor.h>
 
 // --- Motor 1 (Esquerda) ---
 #define M1_ENA 2
@@ -16,27 +18,29 @@
 #define M3_IN1 9
 #define M3_IN2 10
 
-// --- Solenoide (canal livre do L298N) ---
+// --- Solenoide ---
 #define SOL_ENB 13
 #define SOL_IN3 11
 #define SOL_IN4 12
 
-// --- Variáveis do IR ---
+// --- IR ---
 int ballDirection;
 int ballIntens;
 
-// --- Velocidade base ---
-int velocidade = 255;
-
-// --- PID ---
+// --- PID (mesmo ganho para IR e bússola, como você vinha usando) ---
 float kp = 1;
 float ki = 0;
 float kd = 0;
 float erroAnterior = 0;
 float proporcional, integral, derivativo = 0;
 
+// --- Velocidade ---
+int velocidade = 255;
 
-// --- Média móvel para suavizar direção ---
+// --- Bússola ---
+Adafruit_BNO055 bno = Adafruit_BNO055();
+
+// --- Média móvel IR ---
 #define BUFFER_SIZE 5
 int bufferDirecao[BUFFER_SIZE] = {5,5,5,5,5};
 int bufferIndex = 0;
@@ -45,9 +49,9 @@ int mediaDirecao(int nova) {
   bufferDirecao[bufferIndex] = nova;
   bufferIndex = (bufferIndex + 1) % BUFFER_SIZE;
   int soma = 0;
-  for (int i=0; i<BUFFER_SIZE; i++) soma += bufferDirecao[i];
+  for (int i = 0; i < BUFFER_SIZE; i++) soma += bufferDirecao[i];
   int media = soma / BUFFER_SIZE;
-  return constrain(media, 0, 9); // garante que nunca passe de 9
+  return constrain(media, 0, 9);
 }
 
 // ------------------- Setup -------------------
@@ -55,10 +59,17 @@ void setup() {
   Serial.begin(9600);
   Wire.begin();
 
-  // Inicializa IR Seeker
+  // Inicializa IR
   InfraredSeeker::Initialize();
 
-  // Configura pinos motores
+  // Inicializa BNO055
+  if (!bno.begin()) {
+    Serial.println("Erro ao iniciar BNO055!");
+    while (1);
+  }
+  bno.setExtCrystalUse(true);
+
+  // Motores
   pinMode(M1_ENA, OUTPUT); pinMode(M1_IN1, OUTPUT); pinMode(M1_IN2, OUTPUT);
   pinMode(M2_ENB, OUTPUT); pinMode(M2_IN3, OUTPUT); pinMode(M2_IN4, OUTPUT);
   pinMode(M3_ENA, OUTPUT); pinMode(M3_IN1, OUTPUT); pinMode(M3_IN2, OUTPUT);
@@ -69,41 +80,63 @@ void setup() {
   Serial.println("Sistema iniciado. Seguindo a bola...");
 }
 
-// --- Funções de movimento ---
+// ------------------- Funções -------------------
 void parar() {
   analogWrite(M1_ENA, 0);
   analogWrite(M2_ENB, 0);
   analogWrite(M3_ENA, 0);
 }
 
-void PID(int erro, int velocidade) {
+
+void Bussola(float erroBussola, int velocidade) {
+  float correcao_Bussola = kp * erroBussola; // Limitando correção para ficar suave e ñ ir duma vez
+
+  int velEsq, velDir, velTras = 0;
+
+   if (erroBussola == 0) {
+    velEsq  = constrain(velocidade - correcao_Bussola, 0, 255);
+    velDir  = constrain(velocidade + correcao_Bussola, 0, 255) * -1;
+    velTras = constrain(correcao_Bussola, 0, 255);
+  }
+  if (erroBussola < 3) {
+    velEsq  = constrain(velocidade - correcao_Bussola, 0, 255) * -1;
+    velDir  = constrain(velocidade + correcao_Bussola, 0, 255) * -1;
+    velTras = constrain(correcao_Bussola, 0, 255) * -1;
+  }
+  if (erroBussola > 3) {
+    velEsq  = constrain(velocidade - correcao_Bussola, 0, 255);
+    velDir  = constrain(velocidade + correcao_Bussola, 0, 255);
+    velTras = constrain(correcao_Bussola, 0, 255);
+  }
+
+  Deslocar(velEsq, velDir, velTras);
+}
+void PID(float erro, int velocidade) {
   proporcional = kp * erro;
-  integral = ki * erro;
-  derivativo = kd * (erro - erroAnterior);
+  integral     = ki * erro;
+  derivativo   = kd * (erro - erroAnterior);
   erroAnterior = erro;
 
   float correcao = proporcional + integral + derivativo;
   int velEsq, velDir, velTras = 0;
-  if (erro == 0){
-    velEsq = constrain(velocidade - correcao, 0, 255);
-    velDir = constrain(velocidade + correcao, 0, 255) * -1;
+
+  if (erro == 0) {
+    velEsq  = constrain(velocidade - correcao, 0, 255);
+    velDir  = constrain(velocidade + correcao, 0, 255) * -1;
     velTras = constrain(correcao, 0, 255);
   }
-
-  if (erro < 0){
-    velEsq = constrain(velocidade - correcao, 0, 255) * -1;
-    velDir = constrain(velocidade + correcao, 0, 255) * -1;
+  if (erro < 0) {
+    velEsq  = constrain(velocidade - correcao, 0, 255) * -1;
+    velDir  = constrain(velocidade + correcao, 0, 255) * -1;
     velTras = constrain(correcao, 0, 255) * -1;
   }
-
-  if (erro > 0){
-    velEsq = constrain(velocidade - correcao, 0, 255);
-    velDir = constrain(velocidade + correcao, 0, 255);
+  if (erro > 0) {
+    velEsq  = constrain(velocidade - correcao, 0, 255);
+    velDir  = constrain(velocidade + correcao, 0, 255);
     velTras = constrain(correcao, 0, 255);
   }
 
- Deslocar(velEsq, velDir, velTras);
-
+  Deslocar(velEsq, velDir, velTras);
 }
 
 void Deslocar(int motoresquerdo, int motordireito, int motortras){
@@ -146,25 +179,36 @@ void Deslocar(int motoresquerdo, int motordireito, int motortras){
       digitalWrite(M3_IN1, LOW); digitalWrite(M3_IN2, HIGH);
       analogWrite(M3_ENA, motortras);
   }
-
-
-
 }
-
 // ------------------- Loop principal -------------------
 void loop() {
-  // --- Lê bola ---
+  // IR
   InfraredResult InfraredBall = InfraredSeeker::ReadAC(); // Realiza a leitura do sensor IR Seeker
   ballDirection = InfraredBall.Direction; // Armazena a direção na variável
   ballIntens = InfraredBall.Strength; // Armazena a direção na variável
 
-  // --- Mostra valores ---
-  Serial.print("Direção: "); Serial.print(ballDirection);
-  Serial.print(" | Intensidade: "); Serial.println(ballIntens);
+  int erro = 5 - ballDirection;  // centro do IR é 5
 
-  // --- Controle de movimento com PID ---
-  int erro = 5 - ballDirection; // Centro é 5
-  PID(erro, velocidade);
+  // Bússola
+  sensors_event_t event;
+  bno.getEvent(&event);
+  float compassAngle = event.orientation.x; // 0° é o gol adversário
+  // erro da bússola para 0°, normalizado para -180..180 para girar pelo menor lado
+  float erroBussola = -compassAngle;
+  if (erroBussola > 180)  erroBussola -= 360;
+  if (erroBussola < -180) erroBussola += 360;
 
-millis();
+  // Escolha da estratégia
+  if (ballIntens > 220) {     // bola perto: usa bússola para apontar pro gol
+    Bussola(erroBussola, velocidade);
+  } else {                    // bola longe: segue a bola pelo IR
+    PID(erro, velocidade);
+  }
+
+  // Debug
+  Serial.print("Dir IR: "); Serial.print(ballDirection);
+  Serial.print(" | Intens: "); Serial.print(ballIntens);
+  Serial.print(" | Compass: "); Serial.println(compassAngle);
+
+  delay(50);
 }
