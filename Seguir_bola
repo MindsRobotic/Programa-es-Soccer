@@ -1,0 +1,127 @@
+#include <Wire.h>
+#include <AFMotor.h>
+#include <HTInfraredSeeker.h>
+
+AF_DCMotor motor1(1);
+AF_DCMotor motor2(2);
+AF_DCMotor motor3(3);
+AF_DCMotor motor4(4);
+
+//IR//
+int ballDirection;
+int ballIntens;
+
+//PID//
+float kp = 1;
+float kd = 0;
+float ki = 0;
+float erroAnterior = 0;
+float proporcional, integral, derivativo = 0;
+
+//Movimento//
+float L = 0;
+float Ft = 0;
+float G = 0;
+
+int mFE, mFD, mTE, mTD; //motores: frente esquerdo, frente direito, traseiro esquerdo, traseiro direito
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(9600);
+  Wire.begin();
+
+  // Inicializa IR
+  InfraredSeeker::Initialize();
+
+  motor1.setSpeed(0);
+  motor2.setSpeed(0);
+  motor3.setSpeed(0);
+  motor4.setSpeed(0);
+
+  motor1.run(RELEASE);
+  motor2.run(RELEASE);
+  motor3.run(RELEASE);
+  motor4.run(RELEASE);
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  InfraredResult InfraredBall = InfraredSeeker::ReadAC();
+  ballDirection = InfraredBall.Direction;
+  ballIntens = InfraredBall.Strength;
+
+  Serial.print("Direcao: ");
+  Serial.print(ballDirection);
+  Serial.print(" | Intensidade: ");
+  Serial.println(ballIntens);
+
+  calcularPID();    // gera g
+  definirMovimento(); 
+  calcularMotores();
+  aplicarMotores();
+}
+
+
+//PID, gera o giro//
+void calcularPID() {
+
+  // Frente do robô = 5
+  float erro = ballDirection - 5;
+
+  proporcional = erro;
+  integral += erro;
+  derivativo = erro - erroAnterior;
+
+  G = (kp * proporcional) +
+      (ki * integral) +
+      (kd * derivativo);
+
+  // Limita o giro
+  G = constrain(G, -100, 100);
+
+  erroAnterior = erro;
+}
+
+//movimento///
+void definirMovimento() {
+
+  if (ballIntens > 0) {
+    Ft = 150;     // anda para frente se vê a bola
+  } else {
+    Ft = 0;       // para se não vê
+  }
+
+  L = 0;          // sem movimento lateral (por enquanto)
+}
+
+// -------- Cinemática omni --------
+void calcularMotores() {
+
+  mFE = Ft - L - G;   // Frente Esquerda
+  mFD = Ft + L + G;   // Frente Direita
+  mTE = Ft + L - G;   // Trás Esquerda
+  mTD = Ft - L + G;   // Trás Direita
+}
+
+// -------- Aplicação nos motores --------
+void aplicarMotores() {
+  aplicarMotor(motor1, mFE);
+  aplicarMotor(motor2, mFD);
+  aplicarMotor(motor3, mTE);
+  aplicarMotor(motor4, mTD);
+}
+
+void aplicarMotor(AF_DCMotor &motor, int vel) {
+
+  if (vel > 0) {
+    motor.run(FORWARD);
+    motor.setSpeed(vel);
+  }
+  else if (vel < 0) {
+    motor.run(BACKWARD);
+    motor.setSpeed(abs(vel));
+  }
+  else {
+    motor.run(RELEASE);
+  }
+}
